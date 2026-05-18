@@ -13,7 +13,7 @@ rewards returns:
 }
 
 Every timestep:              -1
-Successful dropoff:          +100
+Reached destination:         +100
 Collision/blocking:          -5 to -20
-Move closer to target:       small positive shaping
-Move away from target:       small negative shaping
+Move closer to destination:  small positive shaping
+Move away from destination:  small negative shaping
