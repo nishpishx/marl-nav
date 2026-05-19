@@ -1,3 +1,4 @@
+import time
 import mujoco
 import mujoco.viewer
 
@@ -20,9 +21,10 @@ def main():
 
     
     with mujoco.viewer.launch_passive(model, data) as viewer:
-        for step in range(1000):
+        while viewer.is_running():
             mujoco.mj_step(model, data)
             viewer.sync()
+            time.sleep(model.opt.timestep)
 
 if __name__ == "__main__":
     main()
