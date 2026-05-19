@@ -1,7 +1,7 @@
 import gymnasium
 import racecar_gym.envs.gym_api
 
-env = gymnasium.make("MultiAgentRaceEnv-v0", scenario="coop_austria.yml")
+env = gymnasium.make("MultiAgentRaceEnv-v0", scenario="env/coop_austria.yml")
 obs, info = env.reset(options={"mode": "grid"})
 
 done = False
