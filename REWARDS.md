@@ -1,19 +1,44 @@
-rewards = reward_fn(
-    prev_state=prev_state,
-    actions=actions,
-    next_state=next_state,
-    events=events,
-)
+```python
+from reward import RacecarReward
 
-rewards returns:
+reward_fn = RacecarReward()
+reward = reward_fn.reward(agent_id="A", state=state, action=action)
+```
+
+`state["A"]` is expected to look like:
+
+```python
 {
-    "taxi_0": -1.0,
-    "taxi_1": 20.0,
-    "taxi_2": -6.0,
+    "wall_collision": False,
+    "opponent_collisions": [],
+    "pose": [...],       # x, y, z, roll, pitch, yaw
+    "velocity": [...],   # x, y, z, roll, pitch, yaw
+    "progress": 0.23,    # progress within the current lap, [0, 1]
+    "lap": 1,
+    "time": 12.4,
+    "checkpoint": 3,
+    "rank": 2,
+    "wrong_way": False,
+    "observations": {...},
 }
+```
 
-Every timestep:              -1
-Reached destination:         +100
-Collision/blocking:          -5 to -20
-Move closer to destination:  small positive shaping
-Move away from destination:  small negative shaping
+The action dict is the actual racecar action space for that scenario, usually:
+
+```python
+{"motor": 0.2, "steering": -0.1}
+```
+
+or:
+
+```python
+{"speed": 0.2, "steering": -0.1}
+```
+
+Reward shape:
+
+- Progress delta: positive when the car moves forward around the track
+- Wall/opponent collisions: large negative penalties
+- Wrong way: extra negative penalty
+- Action thrash: small penalty when controls change too abruptly
+- Forward motion: small bonus when the velocity points along the car heading
