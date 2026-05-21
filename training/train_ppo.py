@@ -3,7 +3,7 @@
 # checkpoints saved to checkpoints/ every 50k steps
 
 import os
-import copy
+import io
 import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
@@ -44,7 +44,10 @@ class SelfPlayCallback(BaseCallback):
           if self.num_timesteps % self.update_freq == 0:
               # DummyVecEnv -> Monitor -> SingleAgentWrapper
               inner_env = self.training_env.envs[0].env
-              inner_env.set_opponent_model(copy.deepcopy(self.model))        
+              buf = io.BytesIO()
+              self.model.save(buf)
+              buf.seek(0)
+              inner_env.set_opponent_model(PPO.load(buf))
           return True
 
 checkpoint_cb = CheckpointCallback(
