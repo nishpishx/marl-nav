@@ -23,10 +23,10 @@ class RewardConfig:
         self,
         progress_scale: float = 50.0,
         step_penalty: float = -1,
-        wall_collision_penalty: float = -10.0,
-        opponent_collision_penalty: float = -5.0,
+        wall_collision_penalty: float = -30.0,
+        opponent_collision_penalty: float = -15.0,
         wrong_way_penalty: float = -2.0,
-        action_smoothness_penalty: float = 0.25,
+        action_smoothness_penalty: float = 0.05,
         forward_velocity_scale: float = 0.5,
     ):
         self.progress_scale = progress_scale
