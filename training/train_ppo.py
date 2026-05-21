@@ -15,7 +15,7 @@ print("action space: ", env.action_space)
 model = PPO(
     "MlpPolicy",
     env,
-    learning_rate=3e-4,
+    learning_rate=3e-2,
     n_steps=2048,
     batch_size=64,
     n_epochs=10,
