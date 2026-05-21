@@ -85,16 +85,27 @@ class SingleAgentWrapper(gymnasium.Env):
     def reset(self, **kwargs):
         obs, info = self.env.reset(options={"mode": "grid"})
         self.reward_fn.reset()
+        self._all_obs = obs
         return self._flatten_obs(obs[self.agent_id]), info.get(self.agent_id, {})
 
+    def set_opponent_model(self, model):
+        self._opponent_model = model
+      
     def step(self, action):
-
-        actions = {aid: self.env.action_space[aid].sample() for aid in self.agent_ids}
         action_dict = self._unflatten_action(action)
-        actions[self.agent_id] = action_dict
-
+        actions = {self.agent_id: action_dict}
+        for aid in self.agent_ids:
+          if aid == self.agent_id:
+              continue
+          if hasattr(self, "_opponent_model") and self._opponent_model is not None:
+              flat = self._flatten_obs(self._all_obs[aid], agent_id=aid)     
+              opp_action, _ = self._opponent_model.predict(flat, deterministic=False)
+              actions[aid] = self._unflatten_action(opp_action, agent_id=aid)
+          else:
+              actions[aid] = self.env.action_space[aid].sample()
         obs, rewards, terminated, truncated, state = self.env.step(actions)
-
+        self._all_obs = obs
+        
         flat_obs = self._flatten_obs(obs[self.agent_id])
         # use custom reward instead of the env default
         reward = self.reward_fn.reward(self.agent_id, state, action_dict)
