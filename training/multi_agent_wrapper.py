@@ -14,46 +14,73 @@ from reward import RacecarReward
 class SingleAgentWrapper(gymnasium.Env):
     # wraps the multi-agent env so SB3 can use it (expects single agent interface)
 
-    def __init__(self, scenario="env/coop_austria.yml", agent_id="A"):
+    def __init__(
+        self,
+        scenario="env/coop_austria.yml",
+        agent_id="A",
+        render_mode="rgb_array_birds_eye",
+        render_options=None,
+    ):
         super().__init__()
+        self.agent_id = agent_id
+        self._render_options = dict(render_options or {})
+        if render_mode.startswith("rgb_array_") and "agent" not in self._render_options:
+            self._render_options["agent"] = self.agent_id
         self.env = gymnasium.make(
             "MultiAgentRaceEnv-v0",
             scenario=scenario,
-            render_mode="rgb_array_birds_eye",
+            render_mode=render_mode,
+            render_options=self._render_options,
         )
-        self.agent_id = agent_id
         self.agent_ids = list(self.env.action_space.spaces.keys())
 
         # flatten the dict observation space into one vector
-        agent_obs = self.env.observation_space[self.agent_id]
-        self._obs_keys = sorted(agent_obs.spaces.keys())
+        self._obs_keys_by_agent = {}
+        self._act_keys_by_agent = {}
+        for aid in self.agent_ids:
+            agent_obs = self.env.observation_space[aid]
+            self._obs_keys_by_agent[aid] = sorted(agent_obs.spaces.keys())
+            agent_act = self.env.action_space[aid]
+            self._act_keys_by_agent[aid] = sorted(agent_act.spaces.keys())
 
+        self._obs_keys = self._obs_keys_by_agent[self.agent_id]
+
+        agent_obs = self.env.observation_space[self.agent_id]
         low = np.concatenate([agent_obs[k].low.flatten() for k in self._obs_keys])
         high = np.concatenate([agent_obs[k].high.flatten() for k in self._obs_keys])
         self.observation_space = spaces.Box(low=low.astype(np.float32), high=high.astype(np.float32))
 
-        
+        self._act_keys = self._act_keys_by_agent[self.agent_id]
         agent_act = self.env.action_space[self.agent_id]
-        self._act_keys = sorted(agent_act.spaces.keys())
         act_low = np.concatenate([agent_act[k].low.flatten() for k in self._act_keys])
         act_high = np.concatenate([agent_act[k].high.flatten() for k in self._act_keys])
         self.action_space = spaces.Box(low=act_low.astype(np.float32), high=act_high.astype(np.float32))
 
         self.reward_fn = RacecarReward()
 
-    def _flatten_obs(self, obs_dict):
-        return np.concatenate([np.array(obs_dict[k], dtype=np.float32).flatten() for k in self._obs_keys])
+    def _flatten_obs(self, obs_dict, agent_id=None):
+        agent_id = agent_id or self.agent_id
+        obs_keys = self._obs_keys_by_agent[agent_id]
+        return np.concatenate([np.array(obs_dict[k], dtype=np.float32).flatten() for k in obs_keys])
 
-    def _unflatten_action(self, flat_action):
+    def flatten_obs(self, obs_dict, agent_id=None):
+        return self._flatten_obs(obs_dict, agent_id=agent_id)
+
+    def _unflatten_action(self, flat_action, agent_id=None):
         # split the flat array back into the dict the env expects
         result = {}
         idx = 0
-        agent_act = self.env.action_space[self.agent_id]
-        for k in self._act_keys:
+        agent_id = agent_id or self.agent_id
+        agent_act = self.env.action_space[agent_id]
+        act_keys = self._act_keys_by_agent[agent_id]
+        for k in act_keys:
             size = agent_act[k].shape[0]
             result[k] = flat_action[idx:idx+size].astype(np.float32)
             idx += size
         return result
+
+    def unflatten_action(self, flat_action, agent_id=None):
+        return self._unflatten_action(flat_action, agent_id=agent_id)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(options={"mode": "grid"})
@@ -75,6 +102,9 @@ class SingleAgentWrapper(gymnasium.Env):
         trunc = bool(truncated)
 
         return flat_obs, reward, done, trunc, state.get(self.agent_id, {})
+
+    def render(self):
+        return self.env.render()
 
     def close(self):
         self.env.close()
