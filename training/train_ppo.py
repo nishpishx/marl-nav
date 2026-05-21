@@ -1,3 +1,7 @@
+# run from project root: python training/train_ppo.py
+# monitors: tensorboard --logdir logs/
+# checkpoints saved to checkpoints/ every 50k steps
+
 import os
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
