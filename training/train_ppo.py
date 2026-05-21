@@ -7,7 +7,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from multi_agent_wrapper import SingleAgentWrapper
 
-env = SingleAgentWrapper(scenario="../env/coop_austria.yml", agent_id="A")
+env = SingleAgentWrapper(scenario="env/coop_austria.yml", agent_id="A")
 
 print("obs shape: ", env.observation_space.shape)
 print("action space: ", env.action_space)
