@@ -3,9 +3,13 @@
 # checkpoints saved to checkpoints/ every 50k steps
 
 import os
+import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 from multi_agent_wrapper import SingleAgentWrapper
+from stable_baselines3.common.results_plotter import plot_results
+from stable_baselines3.common import results_plotter
+
 
 env = SingleAgentWrapper(scenario="env/coop_austria.yml", agent_id="A")
 
@@ -15,7 +19,7 @@ print("action space: ", env.action_space)
 model = PPO(
     "MlpPolicy",
     env,
-    learning_rate=3e-2,
+    learning_rate=3e-4,
     n_steps=2048,
     batch_size=64,
     n_epochs=10,
@@ -38,6 +42,9 @@ checkpoint_cb = CheckpointCallback(
 
 model.learn(total_timesteps=500_000, callback=checkpoint_cb)
 model.save("checkpoints/ppo_final")
+
+plot_results(["checkpoints"], 20_000, results_plotter.X_TIMESTEPS, "PPO CartPole")
+plt.show()
 
 env.close()
 print("done")
