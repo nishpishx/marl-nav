@@ -21,7 +21,7 @@ CHECKPOINT_FREQ = 50_000
 env = SingleAgentWrapper(
     scenario="env/coop_austria.yml",
     agent_id="A",
-    motor_min_action=0.0,
+    motor_min_action=-0.5,
     motor_max_action=1.0,
 )
 env = Monitor(env, filename=f"{CHECKPOINT_DIR}/")

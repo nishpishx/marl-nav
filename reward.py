@@ -32,7 +32,12 @@ class RewardConfig:
         stall_speed_threshold: float = 0.15,
         stall_penalty: float = -0.15,
         motor_reward_scale: float = 0.15,
-        brake_penalty_scale: float = 2.0,
+        brake_penalty_scale: float = 0.35,
+        turn_assist_steering_scale: float = 0.45,
+        turn_assist_speed_scale: float = 0.25,
+        turn_assist_target_speed: float = 0.7,
+        turn_assist_min_side_bias: float = 0.12,
+        right_steering_sign: float = -1.0,
         wall_collision_penalty: float = -300.0,
         opponent_collision_penalty: float = -180.0,
         wrong_way_penalty: float = -20.0,
@@ -47,6 +52,11 @@ class RewardConfig:
         self.stall_penalty = stall_penalty
         self.motor_reward_scale = motor_reward_scale
         self.brake_penalty_scale = brake_penalty_scale
+        self.turn_assist_steering_scale = turn_assist_steering_scale
+        self.turn_assist_speed_scale = turn_assist_speed_scale
+        self.turn_assist_target_speed = turn_assist_target_speed
+        self.turn_assist_min_side_bias = turn_assist_min_side_bias
+        self.right_steering_sign = right_steering_sign
         self.wall_collision_penalty = wall_collision_penalty
         self.opponent_collision_penalty = opponent_collision_penalty
         self.wrong_way_penalty = wrong_way_penalty
@@ -93,6 +103,8 @@ class RacecarReward:
         else:
             reward -= self.config.brake_penalty_scale * abs(throttle)
 
+        reward += self._turn_assist_reward(agent_state, action, forward_speed)
+
         if agent_state.get("wall_collision", False):
             reward += self.config.wall_collision_penalty
 
@@ -120,6 +132,66 @@ class RacecarReward:
             delta += 1.0
         return delta
 
+    def _turn_assist_reward(
+        self,
+        agent_state: Dict[str, Any],
+        action: ActionDict,
+        forward_speed: float,
+    ) -> float:
+        clearances = self._lidar_clearances(agent_state)
+        if clearances is None:
+            return 0.0
+
+        front, left, right = clearances
+        side_clearance = max(left, right)
+        if side_clearance <= 1e-6:
+            return 0.0
+
+        front_blocked = np.clip((side_clearance - front) / side_clearance, 0.0, 1.0)
+        side_bias = (right - left) / max(right + left, 1e-6)
+        if front_blocked <= 0.0 or abs(side_bias) < self.config.turn_assist_min_side_bias:
+            return 0.0
+
+        desired_steering_sign = (
+            self.config.right_steering_sign
+            if side_bias > 0.0
+            else -self.config.right_steering_sign
+        )
+        steering = self._steering(action)
+        steering_alignment = desired_steering_sign * steering
+
+        steering_reward = (
+            self.config.turn_assist_steering_scale
+            * front_blocked
+            * abs(side_bias)
+            * steering_alignment
+        )
+
+        excess_speed = max(0.0, forward_speed - self.config.turn_assist_target_speed)
+        speed_penalty = self.config.turn_assist_speed_scale * front_blocked * excess_speed
+        return float(steering_reward - speed_penalty)
+
+    @staticmethod
+    def _lidar_clearances(agent_state: Dict[str, Any]):
+        lidar = agent_state.get("lidar")
+        if lidar is None:
+            return None
+
+        readings = np.asarray(lidar, dtype=np.float32).reshape(-1)
+        readings = readings[np.isfinite(readings)]
+        if readings.size < 8:
+            return None
+
+        n = readings.size
+        right_sector = readings[: max(1, int(0.30 * n))]
+        front_sector = readings[int(0.40 * n): max(int(0.60 * n), int(0.40 * n) + 1)]
+        left_sector = readings[int(0.70 * n):]
+
+        right = float(np.percentile(right_sector, 75))
+        front = float(np.percentile(front_sector, 35))
+        left = float(np.percentile(left_sector, 75))
+        return front, left, right
+
     @staticmethod
     def forward_speed(agent_state: Dict[str, Any]) -> float:
         """Project world-frame velocity onto the car heading"""
@@ -132,4 +204,9 @@ class RacecarReward:
     def _throttle(action: ActionDict) -> float:
         key = "motor" if "motor" in action else "speed"
         value = np.asarray(action[key], dtype=np.float32).reshape(-1)
+        return float(value[0])
+
+    @staticmethod
+    def _steering(action: ActionDict) -> float:
+        value = np.asarray(action.get("steering", 0.0), dtype=np.float32).reshape(-1)
         return float(value[0])

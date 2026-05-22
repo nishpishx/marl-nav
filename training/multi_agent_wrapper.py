@@ -141,7 +141,8 @@ class SingleAgentWrapper(gymnasium.Env):
 
         flat_obs = self._flatten_obs(obs[self.agent_id])
         # use custom reward instead of the env default
-        reward = self.reward_fn.reward(self.agent_id, state, action_dict)
+        reward_state = self._state_with_obs_sensors(state, obs)
+        reward = self.reward_fn.reward(self.agent_id, reward_state, action_dict)
         done = self._flag_for_agent(terminated)
         trunc = self._flag_for_agent(truncated)
 
@@ -155,6 +156,16 @@ class SingleAgentWrapper(gymnasium.Env):
             info["termination_reason"] = termination_reason
 
         return flat_obs, reward, done, trunc, info
+
+    def _state_with_obs_sensors(self, state, obs):
+        agent_state = dict(state.get(self.agent_id, {}))
+        agent_obs = obs.get(self.agent_id, {})
+        if "lidar" in agent_obs and "lidar" not in agent_state:
+            agent_state["lidar"] = agent_obs["lidar"]
+
+        reward_state = dict(state)
+        reward_state[self.agent_id] = agent_state
+        return reward_state
 
     def _flat_action_bounds(self, agent_id):
         agent_act = self.env.action_space[agent_id]
