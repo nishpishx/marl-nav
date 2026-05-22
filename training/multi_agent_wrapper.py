@@ -42,6 +42,7 @@ class SingleAgentWrapper(gymnasium.Env):
             scenario=scenario,
             render_mode=render_mode,
             render_options=self._render_options,
+            disable_env_checker=True,
         )
         self.agent_ids = list(self.env.action_space.spaces.keys())
 

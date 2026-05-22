@@ -120,6 +120,7 @@ class RacecarReward:
             delta += 1.0
         return delta
 
+    @staticmethod
     def forward_speed(agent_state: Dict[str, Any]) -> float:
         """Project world-frame velocity onto the car heading"""
         pose = np.asarray(agent_state["pose"], dtype=np.float32).reshape(-1)
@@ -127,6 +128,7 @@ class RacecarReward:
         yaw = float(pose[5])
         return float(velocity[0]) * cos(yaw) + float(velocity[1]) * sin(yaw)
 
+    @staticmethod
     def _throttle(action: ActionDict) -> float:
         key = "motor" if "motor" in action else "speed"
         value = np.asarray(action[key], dtype=np.float32).reshape(-1)

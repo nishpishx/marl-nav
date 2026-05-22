@@ -2,6 +2,7 @@ from pathlib import Path
 import time
 import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
+from stable_baselines3.common.utils import check_for_correct_spaces
 from multi_agent_wrapper import SingleAgentWrapper
 
 
@@ -26,7 +27,9 @@ def resolve_model_path():
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def make_env():
+def make_env(action_space):
+    motor_min_action = float(action_space.low[0])
+    motor_max_action = float(action_space.high[0])
     return SingleAgentWrapper(
         scenario=str(SCENARIO),
         agent_id=CAMERA_AGENT_ID,
@@ -35,14 +38,17 @@ def make_env():
         terminate_on_wall_collision=False,
         terminate_on_opponent_collision=False,
         opponent_deterministic=True,
+        motor_min_action=motor_min_action,
+        motor_max_action=motor_max_action,
     )
 
 
 def run():
-    env = make_env()
     model_path = resolve_model_path()
     print(f"loading model: {model_path}")
-    model = PPO.load(str(model_path), env=env)
+    model = PPO.load(str(model_path))
+    env = make_env(model.action_space)
+    check_for_correct_spaces(env, model.observation_space, model.action_space)
     env.set_opponent_model(model, deterministic=True)
 
     try:
