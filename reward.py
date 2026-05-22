@@ -10,36 +10,51 @@ Expected inputs:
   {"speed", "steering"}.
 """
 from math import cos, sin
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
+
+import numpy as np
 
 AgentID = str
 State = Dict[str, Any]
 ActionDict = Dict[str, Any]
 
+
 class RewardConfig:
-    """Weights used by :class:`RacecarReward`."""
+    """Small set of tunable reward weights."""
 
     def __init__(
         self,
-        progress_scale: float = 50.0,
-        step_penalty: float = -1,
-        wall_collision_penalty: float = -30.0,
-        opponent_collision_penalty: float = -15.0,
-        wrong_way_penalty: float = -2.0,
-        action_smoothness_penalty: float = 0.05,
-        forward_velocity_scale: float = 0.5,
+        progress_scale: float = 2500.0,
+        forward_velocity_scale: float = 1.0,
+        step_penalty: float = -0.002,
+        target_forward_speed: float = 0.6,
+        slow_speed_penalty_scale: float = 0.4,
+        stall_speed_threshold: float = 0.15,
+        stall_penalty: float = -0.15,
+        motor_reward_scale: float = 0.15,
+        brake_penalty_scale: float = 2.0,
+        wall_collision_penalty: float = -300.0,
+        opponent_collision_penalty: float = -180.0,
+        wrong_way_penalty: float = -20.0,
+        reverse_velocity_penalty_scale: float = 2.0,
     ):
         self.progress_scale = progress_scale
+        self.forward_velocity_scale = forward_velocity_scale
         self.step_penalty = step_penalty
+        self.target_forward_speed = target_forward_speed
+        self.slow_speed_penalty_scale = slow_speed_penalty_scale
+        self.stall_speed_threshold = stall_speed_threshold
+        self.stall_penalty = stall_penalty
+        self.motor_reward_scale = motor_reward_scale
+        self.brake_penalty_scale = brake_penalty_scale
         self.wall_collision_penalty = wall_collision_penalty
         self.opponent_collision_penalty = opponent_collision_penalty
         self.wrong_way_penalty = wrong_way_penalty
-        self.action_smoothness_penalty = action_smoothness_penalty
-        self.forward_velocity_scale = forward_velocity_scale
+        self.reverse_velocity_penalty_scale = reverse_velocity_penalty_scale
 
 
 class RacecarReward:
-    """Compute a shaped reward from the current agent state and action."""
+    """Compute a compact reward from progress, speed, and safety events."""
 
     def __init__(self, config: Optional[RewardConfig] = None):
         self.config = config if config is not None else RewardConfig()
@@ -47,54 +62,72 @@ class RacecarReward:
 
     def reset(self) -> None:
         self._last_progress: Optional[float] = None
-        self._last_action: Optional[Tuple[float, float]] = None
 
     def reward(self, agent_id: AgentID, state: State, action: ActionDict) -> float:
         """Return the reward for one agent at a single environment step."""
         agent_state = state[agent_id]
 
-        # Start with a small step cost so doing nothing is slightly negative.
         reward = self.config.step_penalty
 
-        # Progress is lap number plus within-lap progress in [0, 1].
-        progress = float(agent_state["lap"]) + float(agent_state["progress"])
-        if self._last_progress is not None:
-            delta = progress - self._last_progress
-            # Treat lap wraparound as forward motion instead of a big jump.
-            if delta > 0.5:
-                delta -= 1.0
-            elif delta < -0.5:
-                delta += 1.0
-            reward += delta * self.config.progress_scale
-        self._last_progress = progress
+        progress_delta = self._progress_delta(agent_state)
+        reward += self.config.progress_scale * progress_delta
 
-        if agent_state["wall_collision"]:
+        forward_speed = self.forward_speed(agent_state)
+        reward += self.config.forward_velocity_scale * max(0.0, forward_speed)
+        reward -= self.config.reverse_velocity_penalty_scale * max(0.0, -forward_speed)
+
+        slow_speed_gap = self.config.target_forward_speed - max(0.0, forward_speed)
+        if slow_speed_gap > 0.0:
+            reward -= (
+                self.config.slow_speed_penalty_scale
+                * slow_speed_gap
+                / max(self.config.target_forward_speed, 1e-6)
+            )
+
+        if forward_speed < self.config.stall_speed_threshold:
+            reward += self.config.stall_penalty
+
+        throttle = self._throttle(action)
+        if throttle >= 0.0:
+            reward += self.config.motor_reward_scale * throttle
+        else:
+            reward -= self.config.brake_penalty_scale * abs(throttle)
+
+        if agent_state.get("wall_collision", False):
             reward += self.config.wall_collision_penalty
 
-        # opponent_collisions is expected to be a sequence of contact entries.
-        opponent_collisions = agent_state["opponent_collisions"]
+        opponent_collisions = agent_state.get("opponent_collisions", [])
         reward += self.config.opponent_collision_penalty * len(opponent_collisions)
 
-        if agent_state["wrong_way"]:
+        if agent_state.get("wrong_way", False):
             reward += self.config.wrong_way_penalty
 
-        # Project the velocity vector onto the car heading to estimate forward speed.
-        pose = agent_state["pose"]
-        velocity = agent_state["velocity"]
-        yaw = float(pose[5])
-        forward_speed = float(velocity[0]) * cos(yaw) + float(velocity[1]) * sin(yaw)
-        reward += self.config.forward_velocity_scale * max(0.0, forward_speed)
-
-        # Some envs expose throttle as "motor", others as "speed".
-        throttle = action["motor"] if "motor" in action else action["speed"]
-        steering = action["steering"]
-        throttle = float(throttle)
-        steering = float(steering)
-        if self._last_action is not None:
-            last_throttle, last_steering = self._last_action
-            # Penalize abrupt control changes relative to the last step.
-            change = abs(throttle - last_throttle) + abs(steering - last_steering)
-            reward -= self.config.action_smoothness_penalty * change
-        self._last_action = (throttle, steering)
-
         return float(reward)
+
+    def _progress_delta(self, agent_state: Dict[str, Any]) -> float:
+        progress = float(agent_state["lap"]) + float(agent_state["progress"])
+        if self._last_progress is None:
+            self._last_progress = progress
+            return 0.0
+
+        delta = progress - self._last_progress
+        self._last_progress = progress
+
+        # Progress should be monotonic, but keep wraparound robust if lap is delayed
+        if delta > 0.5:
+            delta -= 1.0
+        elif delta < -0.5:
+            delta += 1.0
+        return delta
+
+    def forward_speed(agent_state: Dict[str, Any]) -> float:
+        """Project world-frame velocity onto the car heading"""
+        pose = np.asarray(agent_state["pose"], dtype=np.float32).reshape(-1)
+        velocity = np.asarray(agent_state["velocity"], dtype=np.float32).reshape(-1)
+        yaw = float(pose[5])
+        return float(velocity[0]) * cos(yaw) + float(velocity[1]) * sin(yaw)
+
+    def _throttle(action: ActionDict) -> float:
+        key = "motor" if "motor" in action else "speed"
+        value = np.asarray(action[key], dtype=np.float32).reshape(-1)
+        return float(value[0])
