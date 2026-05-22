@@ -10,10 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCENARIO = ROOT / "env" / "coop_austria.yml"
 MODEL_DIR = ROOT / "checkpoints"
 MODEL_PATH = None  # Set to a specific model file to override the latest checkpoint
-CAMERA_AGENT_ID = "A"
+CAMERA_AGENT_ID = "C"
 RENDER_MODE = "rgb_array_follow"
 MAX_STEPS = 2000
-FRAME_DELAY = 0.05
+FRAME_DELAY = 0.0125
 VIEW_WIDTH = 720
 VIEW_HEIGHT = 480
 
